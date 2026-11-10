@@ -1,0 +1,128 @@
+import { type PluginAgentPanelProps, useRpc } from "@getpaseo/plugin/client";
+import { useEffect, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { cancelQuestion, listQuestions, type Question } from "../shared/btw";
+
+export function BtwPanel({
+  theme,
+  layout,
+  params,
+  revision,
+}: PluginAgentPanelProps) {
+  const list = useRpc(listQuestions);
+  const cancel = useRpc(cancelQuestion);
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [refresh, setRefresh] = useState(0);
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        root: { flex: 1, backgroundColor: theme.colors.surface0 },
+        content: { padding: layout.compact ? 16 : 24, gap: 16 },
+        question: {
+          padding: 16,
+          gap: 12,
+          borderWidth: 1,
+          borderColor: theme.colors.border,
+          backgroundColor: theme.colors.surface1,
+        },
+        text: { color: theme.colors.foreground },
+        error: { color: theme.colors.statusDanger },
+        running: { flexDirection: "row", alignItems: "center", gap: 12 },
+        button: { padding: 8, backgroundColor: theme.colors.surface2 },
+      }),
+    [theme, layout.compact],
+  );
+
+  useEffect(() => {
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    setLoading(true);
+    async function update() {
+      try {
+        const result = await list({ agentId: params.agentId });
+        if (disposed) return;
+        setQuestions(result.questions);
+        setError(null);
+        setLoading(false);
+        if (
+          result.questions.some((question) => question.status === "running")
+        ) {
+          timer = setTimeout(update, 1000);
+        }
+      } catch (cause) {
+        if (disposed) return;
+        setError(cause instanceof Error ? cause.message : String(cause));
+        setLoading(false);
+      }
+    }
+    void update();
+    return () => {
+      disposed = true;
+      clearTimeout(timer);
+    };
+  }, [list, params.agentId, revision, refresh]);
+
+  async function cancelRunningQuestion(id: string) {
+    setIsCancelling(true);
+    try {
+      await cancel({ agentId: params.agentId, id });
+      setRefresh((value) => value + 1);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setIsCancelling(false);
+    }
+  }
+
+  return (
+    <ScrollView style={styles.root} contentContainerStyle={styles.content}>
+      {loading ? <ActivityIndicator color={theme.colors.accent} /> : null}
+      {error ? (
+        <Text selectable style={styles.error}>
+          {error}
+        </Text>
+      ) : null}
+      {questions.map((question) => (
+        <View key={question.id} style={styles.question}>
+          <Text selectable style={styles.text}>
+            {question.question}
+          </Text>
+          {question.status === "running" ? (
+            <View style={styles.running}>
+              <ActivityIndicator color={theme.colors.accent} />
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Cancel"
+                disabled={isCancelling}
+                style={styles.button}
+                onPress={() => void cancelRunningQuestion(question.id)}
+              >
+                <Text style={styles.text}>Cancel</Text>
+              </Pressable>
+            </View>
+          ) : null}
+          {question.status === "complete" ? (
+            <Text selectable style={styles.text}>
+              {question.answer}
+            </Text>
+          ) : null}
+          {question.status === "error" ? (
+            <Text selectable style={styles.error}>
+              {question.error}
+            </Text>
+          ) : null}
+        </View>
+      ))}
+    </ScrollView>
+  );
+}
