@@ -9,7 +9,8 @@
   "scripts": {
     "test": "node --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "typecheck:runner": "tsc --noEmit -p tsconfig.runner.json"
+    "typecheck:runner": "tsc --noEmit -p tsconfig.runner.json",
+    "test:client": "ELECTRON_RUN_AS_NODE=1 /Applications/Paseo.app/Contents/MacOS/Paseo --test tests/compiled-client.test.mjs"
   },
   "files": [
     "paseo-plugin.json",
@@ -27,6 +28,10 @@
     "react": "19.1.0",
     "react-native": "0.81.5",
     "typescript": "^5.9.3",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "@testing-library/react": "16.3.2",
+    "jsdom": "29.1.1",
+    "react-dom": "19.1.0",
+    "@testing-library/dom": "10.4.1"
   }
 }

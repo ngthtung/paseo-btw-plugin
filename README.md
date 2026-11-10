@@ -2,7 +2,7 @@
 
 A custom Paseo plugin that opens ephemeral Codex side chats with `/btw`.
 
-Use `/btw <prompt>` in a Codex agent to open a separate tab with an answer based on an ephemeral, read-only fork of its saved context. `/btw` without a prompt opens the tab. Each question starts a separate fork; it is not a follow-up to the previous side question.
+Use `/btw <prompt>` in a Codex agent to open a separate tab with an answer based on an ephemeral, read-only fork of its saved context. `/btw` without a prompt opens the tab. You can also type a question in the tab and select Send. Each question starts a separate fork; it is not a follow-up to the previous side question.
 
 ## Contents and review
 
@@ -16,6 +16,8 @@ The source uses Paseo's host-provided plugin SDK, React Native, React, and Zod. 
 ## Validation
 
 Run `node --test tests/*.test.ts` with Node.js 24 or later. The test fixtures and temporary workspaces stay inside `tests/.tmp/` and are removed after each test.
+
+`npm run test:client` checks the compiled panel with React and jsdom on this Mac. It requires the development dependencies listed in `package.json`. When reusing existing development dependencies from another directory, set `PASEO_TEST_DEPS_ROOT` to that directory. No model calls are made.
 
 `npm run typecheck` requires the development types listed in `package.json`. The build can also be checked with Paseo's own installed compiler without installing or enabling this plugin.
 
