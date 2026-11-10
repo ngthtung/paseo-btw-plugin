@@ -66,6 +66,7 @@ native.Pressable = ({ children, disabled, onPress, accessibilityLabel }) =>
 native.TextInput = ({
   value,
   onChangeText,
+  onKeyPress,
   placeholder,
   editable,
   accessibilityLabel,
@@ -76,6 +77,7 @@ native.TextInput = ({
     disabled: editable === false,
     "aria-label": accessibilityLabel,
     onChange: (event) => onChangeText?.(event.target.value),
+    onKeyDown: onKeyPress,
   });
 native.ActivityIndicator = () =>
   React.createElement("span", { role: "progressbar" });
@@ -221,8 +223,10 @@ test("the panel has a message input and disables Send for empty or whitespace-on
   const input = view.getByPlaceholderText("Message...");
   const send = view.getByRole("button", { name: "Send message" });
   assert.equal(send.disabled, true);
+  fireEvent.keyDown(input, { key: "Enter", code: "Enter", keyCode: 13 });
   fireEvent.change(input, { target: { value: " \n\t " } });
   assert.equal(send.disabled, true);
+  fireEvent.keyDown(input, { key: "Enter", code: "Enter", keyCode: 13 });
   fireEvent.click(send);
   assert.deepEqual(
     calls.map((call) => call.name),
@@ -308,4 +312,128 @@ test("a rejected start retains the draft, shows the error, and allows retry", as
   fireEvent.click(view.getByRole("button", { name: "Send message" }));
   await waitFor(() => assert.equal(starts, 2));
   assert.equal(lists, 1);
+});
+
+test("Enter starts the exact draft once for the current agent and clears it only after acceptance", async () => {
+  const question = "  Preserve Enter question whitespace.\nSecond line.\n ";
+  const starts = [];
+  let accept;
+  const accepted = new Promise((resolve) => {
+    accept = resolve;
+  });
+  let lists = 0;
+  const view = mount(async (name, input) => {
+    if (name === "btw.list") {
+      lists += 1;
+      return {
+        questions:
+          lists === 1
+            ? []
+            : [
+                {
+                  id: "keyboard-question",
+                  question,
+                  status: "complete",
+                  answer: "Keyboard side answer",
+                },
+              ],
+      };
+    }
+    assert.equal(name, "btw.start");
+    starts.push(input);
+    return accepted;
+  });
+  await loaded(view);
+  const input = view.getByPlaceholderText("Message...");
+  fireEvent.change(input, { target: { value: question } });
+  const defaultAllowed = fireEvent.keyDown(input, {
+    key: "Enter",
+    code: "Enter",
+    keyCode: 13,
+  });
+  assert.deepEqual(
+    starts,
+    [{ agentId: "source-agent", question }],
+    "Enter must start the side question exactly once",
+  );
+  assert.equal(
+    defaultAllowed,
+    false,
+    "submitting Enter must prevent insertion of a newline",
+  );
+  assert.equal(input.value, question);
+  assert.equal(lists, 1);
+  fireEvent.keyDown(input, {
+    key: "Enter",
+    code: "Enter",
+    keyCode: 13,
+    repeat: true,
+  });
+  fireEvent.click(view.getByRole("button", { name: "Send message" }));
+  assert.equal(
+    starts.length,
+    1,
+    "pending submission must not start a duplicate question",
+  );
+  await act(async () => accept({ id: "keyboard-question" }));
+  await waitFor(() => assert.equal(input.value, ""));
+  await waitFor(() => assert.ok(view.getByText("Keyboard side answer")));
+  assert.equal(lists, 2);
+});
+
+test("Shift+Enter leaves newline insertion enabled and does not submit", async () => {
+  const calls = [];
+  const view = mount(async (name, input) => {
+    calls.push({ name, input });
+    assert.equal(name, "btw.list");
+    return { questions: [] };
+  });
+  await loaded(view);
+  const input = view.getByPlaceholderText("Message...");
+  const question = "First line";
+  fireEvent.change(input, { target: { value: question } });
+  const defaultAllowed = fireEvent.keyDown(input, {
+    key: "Enter",
+    code: "Enter",
+    keyCode: 13,
+    shiftKey: true,
+  });
+  assert.equal(
+    defaultAllowed,
+    true,
+    "Shift+Enter must preserve the native newline action",
+  );
+  assert.equal(calls.filter((call) => call.name === "btw.start").length, 0);
+  fireEvent.change(input, { target: { value: `${question}\n` } });
+  assert.equal(input.value, `${question}\n`);
+});
+
+test("Enter during IME composition preserves the native action without submitting", async () => {
+  const calls = [];
+  const view = mount(async (name, input) => {
+    calls.push({ name, input });
+    assert.equal(name, "btw.list");
+    return { questions: [] };
+  });
+  await loaded(view);
+  const input = view.getByPlaceholderText("Message...");
+  const question = "Đang nhập tiếng Việt";
+  fireEvent.change(input, { target: { value: question } });
+  for (const composition of [
+    { isComposing: true, keyCode: 13 },
+    { isComposing: false, keyCode: 229 },
+  ]) {
+    const defaultAllowed = fireEvent.keyDown(input, {
+      key: "Enter",
+      code: "Enter",
+      ...composition,
+    });
+    assert.equal(
+      defaultAllowed,
+      true,
+      "composing Enter must keep the native IME action",
+    );
+    assert.equal(input.value, question);
+    assert.equal(calls.filter((call) => call.name === "btw.start").length, 0);
+  }
 });

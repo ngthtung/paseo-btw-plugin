@@ -2,11 +2,13 @@ import { type PluginAgentPanelProps, useRpc } from "@getpaseo/plugin/client";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  type NativeSyntheticEvent,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  type TextInputKeyPressEventData,
   View,
 } from "react-native";
 import {
@@ -129,6 +131,22 @@ export function BtwPanel({
     }
   }
 
+  function handleKeyPress(
+    event: NativeSyntheticEvent<TextInputKeyPressEventData>,
+  ) {
+    const nativeEvent = event.nativeEvent;
+    if (
+      nativeEvent.key !== "Enter" ||
+      ("shiftKey" in nativeEvent && nativeEvent.shiftKey === true) ||
+      ("isComposing" in nativeEvent && nativeEvent.isComposing === true) ||
+      ("keyCode" in nativeEvent && nativeEvent.keyCode === 229)
+    ) {
+      return;
+    }
+    event.preventDefault();
+    void submitQuestion();
+  }
+
   return (
     <View style={styles.root}>
       <ScrollView style={styles.history} contentContainerStyle={styles.content}>
@@ -174,6 +192,7 @@ export function BtwPanel({
         <TextInput
           value={draft}
           onChangeText={setDraft}
+          onKeyPress={handleKeyPress}
           placeholder="Message..."
           placeholderTextColor={theme.colors.foregroundMuted}
           accessibilityLabel="Message agent..."
