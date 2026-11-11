@@ -1,4 +1,5 @@
 import { type PluginAgentPanelProps, useRpc } from "@getpaseo/plugin/client";
+import { Markdown } from "@getpaseo/plugin/client/ui";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -176,9 +177,7 @@ export function BtwPanel({
               </View>
             ) : null}
             {question.status === "complete" ? (
-              <Text selectable style={styles.text}>
-                {question.answer}
-              </Text>
+              <Markdown>{question.answer}</Markdown>
             ) : null}
             {question.status === "error" ? (
               <Text selectable style={styles.error}>

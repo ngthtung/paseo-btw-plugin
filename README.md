@@ -4,6 +4,8 @@ A custom Paseo plugin that opens ephemeral Codex side chats with `/btw`.
 
 Use `/btw <prompt>` in a Codex agent to open a separate tab with an answer based on an ephemeral, read-only fork of its saved context. `/btw` without a prompt opens the tab. You can also type a question in the tab and select Send or press Enter. Shift+Enter inserts a newline; Enter while confirming IME composition does not send. Each question starts a separate fork; it is not a follow-up to the previous side question.
 
+Answers use Paseo's built-in Markdown renderer for links, lists, emphasis, and code. Link URLs are passed through unchanged.
+
 ## Contents and review
 
 - `index.client.tsx`, `client/`: slash command and Paseo panel.

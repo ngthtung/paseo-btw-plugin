@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile, readdir } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { after, afterEach, test } from "node:test";
@@ -30,7 +31,11 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const { render, cleanup, waitFor, fireEvent, act } = depsRequire(
   "@testing-library/react",
 );
-afterEach(cleanup);
+const markdownRenderCalls = [];
+afterEach(() => {
+  cleanup();
+  markdownRenderCalls.length = 0;
+});
 after(() => dom.window.close());
 
 const RpcContext = React.createContext(null);
@@ -82,6 +87,65 @@ native.TextInput = ({
 native.ActivityIndicator = () =>
   React.createElement("span", { role: "progressbar" });
 
+const webBundleRoot = path.join(
+  path.dirname(archiveRoot),
+  "app-dist/_expo/static/js/web",
+);
+// Load the installed SDK bridge; stop at the host renderer boundary.
+const webBundles = (await readdir(webBundleRoot)).filter((name) =>
+  /^index-.*\.js$/.test(name),
+);
+const webSources = await Promise.all(
+  webBundles.map((name) => readFile(path.join(webBundleRoot, name), "utf8")),
+);
+const markdownWrappers = webSources.flatMap((source) =>
+  source
+    .split("\n")
+    .filter(
+      (line) =>
+        line.startsWith("__d(") && line.includes("e.Markdown=function("),
+    ),
+);
+assert.equal(
+  markdownWrappers.length,
+  1,
+  "Expected Paseo's installed Markdown SDK wrapper",
+);
+const sdkUi = {};
+new Function("__d", markdownWrappers[0])((factory, _id, dependencies) => {
+  assert.equal(dependencies.length, 3);
+  const modules = new Map([
+    [dependencies[0], depsRequire("react/compiler-runtime")],
+    [
+      dependencies[1],
+      {
+        MarkdownRenderer({ text }) {
+          markdownRenderCalls.push(text);
+          return React.createElement(
+            "span",
+            { "data-testid": "host-markdown-renderer" },
+            text,
+          );
+        },
+      },
+    ],
+    [dependencies[2], depsRequire("react/jsx-runtime")],
+  ]);
+  factory(
+    undefined,
+    (id) => {
+      assert.ok(modules.has(id), `Unexpected Markdown SDK dependency: ${id}`);
+      return modules.get(id);
+    },
+    undefined,
+    undefined,
+    { exports: sdkUi },
+    sdkUi,
+    dependencies,
+  );
+});
+assert.equal(typeof sdkUi.Markdown, "function");
+
 const { compileDirectoryPlugin } = await import(
   pathToFileURL(`${pluginsRoot}/compiler.js`).href
 );
@@ -94,6 +158,7 @@ assert.equal(typeof compiled.clientBundle, "string");
 const hostModules = {
   "@getpaseo/plugin": sharedRuntime,
   "@getpaseo/plugin/client": sdkClient,
+  "@getpaseo/plugin/client/ui": sdkUi,
   react: React,
   "react/jsx-runtime": depsRequire("react/jsx-runtime"),
   "react-native": native,
@@ -141,6 +206,32 @@ async function loaded(view) {
     assert.equal(view.queryAllByRole("progressbar").length, 0),
   );
 }
+
+test("completed answers use Paseo Markdown and preserve encoded links, lists, bold, and inline code", async () => {
+  const logUrl =
+    "https://app.datadoghq.com/logs?query=env%3Aexample%20service%3Aexample%20%40request_id%3Aexample-request&live=false";
+  const answer = `[Open logs](${logUrl})\n\n- **Log:** \`Example failure\`\n- **Request:** \`example-request\``;
+  const view = mount(async (name, input) => {
+    assert.equal(name, "btw.list");
+    assert.deepEqual(input, { agentId: "source-agent" });
+    return {
+      questions: [
+        {
+          id: "markdown-question",
+          question: "Explain the example log.",
+          status: "complete",
+          answer,
+        },
+      ],
+    };
+  });
+  await loaded(view);
+  assert.ok(
+    markdownRenderCalls.includes(answer),
+    "The complete answer must reach Paseo's real Markdown SDK wrapper and host renderer without alteration",
+  );
+  assert.equal(view.getByTestId("host-markdown-renderer").textContent, answer);
+});
 
 test("a running question polls to completion and replaces Cancel and the spinner with its answer", async () => {
   let lists = 0;
